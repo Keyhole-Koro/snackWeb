@@ -8,18 +8,20 @@ import (
 	"path/filepath"
 	"strconv"
 
+	"snackWeb/backend/internal/adapter"
 	"snackWeb/backend/internal/db"
 	"snackWeb/backend/internal/repository"
 
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/rs/cors"
 )
 
 func main() {
-	// Initialize Database
+	// Initialize Database (DynamoDB)
 	if err := db.InitDB(); err != nil {
 		log.Fatal("Failed to initialize database:", err)
 	}
-	defer db.CloseDB()
+	// No defer db.CloseDB() needed for DynamoDB client v2
 
 	mux := http.NewServeMux()
 
@@ -87,14 +89,16 @@ func main() {
 		json.NewEncoder(w).Encode(stats)
 	})
 
-	// Mount plots directory
+	// Mount plots directory (Only relevant for local/EC2, not Lambda usually, unless EFS)
+	// In Lambda, we might serve via S3 presigned URLs or CloudFront, but if mounted EFS/S3-Local...
+	// Just keep logic for local dev/legacy.
 	plotsDir := os.Getenv("PLOTS_DIR")
 	if plotsDir == "" {
 		cwd, _ := os.Getwd()
-		// Assuming running from root or cmd/server, aim for persona_data/plots
-		// Let's rely on standard structure: /home/unix/snack/persona_data/plots
+		// Assuming running from root or cmd/server
 		plotsDir = filepath.Join(cwd, "../../../persona_data/plots")
 	}
+	// Check existence before serving to avoid panic in FileServer? No, FileServer is safe.
 	fs := http.FileServer(http.Dir(plotsDir))
 	mux.Handle("/plots/", http.StripPrefix("/plots/", fs))
 
@@ -107,11 +111,18 @@ func main() {
 	})
 	handler := c.Handler(mux)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "13579"
+	// Check execution mode
+	mode := os.Getenv("EXECUTION_MODE")
+	if mode == "lambda" {
+		log.Println("Starting Lambda Handler")
+		lambdaAdapter := adapter.New(handler)
+		lambda.Start(lambdaAdapter.Proxy)
+	} else {
+		port := os.Getenv("PORT")
+		if port == "" {
+			port = "13579"
+		}
+		log.Printf("🍿 SnackWeb Go Backend running at http://localhost:%s", port)
+		log.Fatal(http.ListenAndServe(":"+port, handler))
 	}
-
-	log.Printf("🍿 SnackWeb Go Backend running at http://localhost:%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, handler))
 }

@@ -1,47 +1,54 @@
 package db
 
 import (
-	"database/sql"
-	"fmt"
+	"context"
 	"log"
 	"os"
-	"path/filepath"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 )
 
-var DB *sql.DB
+var Client *dynamodb.Client
+var TableName string
 
 func InitDB() error {
-	// Default to looking for snack.db three levels up from backend_go
-	// Adjust as per deployment location
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return err
+	ctx := context.TODO()
+
+	// Load AWS Config
+	// Use custom endpoint resolver if AWS_ENDPOINT_URL is set (for LocalStack)
+	customResolver := aws.EndpointResolverWithOptionsFunc(func(service, region string, options ...interface{}) (aws.Endpoint, error) {
+		if endpoint := os.Getenv("AWS_ENDPOINT_URL"); endpoint != "" {
+			return aws.Endpoint{
+				PartitionID:   "aws",
+				URL:           endpoint,
+				SigningRegion: region,
+			}, nil
 		}
-		// Assuming cwd is .../snackWeb/backend_go
-		dbPath = filepath.Join(cwd, "../../../snack.db")
-	}
+		// Returning EndpointNotFoundError will allow the service to fallback to its default resolution
+		return aws.Endpoint{}, &aws.EndpointNotFoundError{}
+	})
 
-	log.Printf("Connecting to database at: %s", dbPath)
-
-	var err error
-	DB, err = sql.Open("sqlite3", dbPath+"?_journal_mode=WAL")
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithEndpointResolverWithOptions(customResolver),
+	)
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return err
 	}
 
-	if err = DB.Ping(); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
+	Client = dynamodb.NewFromConfig(cfg)
+
+	TableName = os.Getenv("DYNAMODB_TABLE")
+	if TableName == "" {
+		TableName = "SnackTable"
+		log.Println("DYNAMODB_TABLE not set, defaulting to SnackTable")
 	}
 
+	log.Println("DynamoDB Client initialized. Table:", TableName)
 	return nil
 }
 
 func CloseDB() {
-	if DB != nil {
-		DB.Close()
-	}
+	// AWS SDK v2 clients do not need explicit closing
 }

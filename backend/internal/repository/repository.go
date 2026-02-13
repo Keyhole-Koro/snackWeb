@@ -1,55 +1,58 @@
 package repository
 
 import (
-	"database/sql"
+	"context"
 	"log"
+	"sort"
 	"snackWeb/backend/internal/db"
 	"snackWeb/backend/internal/models"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
 // GetPosts returns a list of feed items with nested replies
 func GetPosts(limit int) ([]models.FeedItem, error) {
-	query := `
-		SELECT 
-			p.id, 
-			p.created_at, 
-			p.event_type, 
-			COALESCE(per.name, '') as agent_name, 
-			p.content, 
-			p.topic
-		FROM post p
-		LEFT JOIN persona per ON p.persona_id = per.id
-		ORDER BY p.created_at DESC
-		LIMIT ?
-	`
-	rows, err := db.DB.Query(query, limit)
+	// Query GSI1 where GSI1PK="POST" (sorted by GSI1SK desc)
+	out, err := db.Client.Query(context.TODO(), &dynamodb.QueryInput{
+		TableName:              aws.String(db.TableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: "POST"},
+		},
+		ScanIndexForward: aws.Bool(false), // DESC order (newest first)
+		Limit:            aws.Int32(int32(limit)),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+
+	var posts []models.Post
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &posts); err != nil {
+		return nil, err
+	}
 
 	var feed []models.FeedItem
-	for rows.Next() {
-		var item models.FeedItem
-		// Actually, let's scan into time.Time and format later
-		var createdAt sql.NullTime
-
-		if err := rows.Scan(&item.ID, &createdAt, &item.EventType, &item.AgentName, &item.Content, &item.Topic); err != nil {
-			log.Println("Error scanning post:", err)
-			continue
-		}
-		if createdAt.Valid {
-			item.Timestamp = createdAt.Time.Format("2006-01-02T15:04:05.000000")
+	for _, p := range posts {
+		item := models.FeedItem{
+			ID:        p.ID,
+			Timestamp: p.CreatedAt,
+			EventType: p.EventType,
+			AgentName: p.AgentName,
+			Content:   p.Content,
+			Topic:     p.Topic,
 		}
 
-		replies, err := GetRepliesForPost(item.ID)
+		replies, err := GetRepliesForPost(p.ID)
 		if err != nil {
 			log.Println("Error fetching replies:", err)
 			item.Replies = []models.APIReply{}
 		} else {
 			item.Replies = replies
 		}
-
 		feed = append(feed, item)
 	}
 
@@ -57,37 +60,42 @@ func GetPosts(limit int) ([]models.FeedItem, error) {
 }
 
 func GetRepliesForPost(postID string) ([]models.APIReply, error) {
-	query := `
-		SELECT 
-			r.id, 
-			r.created_at, 
-			r.event_type, 
-			COALESCE(per.name, '') as agent_name, 
-			r.content
-		FROM reply r
-		LEFT JOIN persona per ON r.persona_id = per.id
-		WHERE r.post_id = ?
-		ORDER BY r.created_at ASC
-	`
-	rows, err := db.DB.Query(query, postID)
+	// Query Main Table PK="POST#<ID>", SK begins_with "REPLY#"
+	// Reply Item Schema: PK=POST#<ID>, SK=REPLY#<TIMESTAMP>
+	
+	pk := "POST#" + postID
+	
+	out, err := db.Client.Query(context.TODO(), &dynamodb.QueryInput{
+		TableName:              aws.String(db.TableName),
+		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :sk_prefix)"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk":        &types.AttributeValueMemberS{Value: pk},
+			":sk_prefix": &types.AttributeValueMemberS{Value: "REPLY#"},
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+
+	var repliesDB []models.Reply
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &repliesDB); err != nil {
+		return nil, err
+	}
 
 	var replies []models.APIReply
-	for rows.Next() {
-		var r models.APIReply
-		var createdAt sql.NullTime
-		if err := rows.Scan(&r.ID, &createdAt, &r.EventType, &r.AgentName, &r.Content); err != nil {
-			continue
-		}
-		if createdAt.Valid {
-			r.Timestamp = createdAt.Time.Format("2006-01-02T15:04:05.000000")
-		}
-		replies = append(replies, r)
+	for _, r := range repliesDB {
+		replies = append(replies, models.APIReply{
+			ID:        r.ID,
+			Timestamp: r.CreatedAt,
+			EventType: r.EventType,
+			AgentName: r.AgentName, // Stored denormalized
+			Content:   r.Content,
+		})
 	}
-	// Return empty slice instead of nil for JSON consistency
+	
+	// Sort ASC by timestamp if not already guaranteed by SK
+	// SK is REPLY#<TIMESTAMP>, so it should be sorted.
+	
 	if replies == nil {
 		replies = []models.APIReply{}
 	}
@@ -95,76 +103,62 @@ func GetRepliesForPost(postID string) ([]models.APIReply, error) {
 }
 
 func GetPersonas() ([]models.Persona, error) {
-	query := `SELECT id, name, bio, is_active FROM persona WHERE is_active = 1`
-	rows, err := db.DB.Query(query)
+	// Query GSI1 where GSI1PK="PERSONA"
+	out, err := db.Client.Query(context.TODO(), &dynamodb.QueryInput{
+		TableName:              aws.String(db.TableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: "PERSONA"},
+		},
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var personas []models.Persona
-	for rows.Next() {
-		var p models.Persona
-		// is_active is boolean in Go, but Integer 0/1 in SQLite. driver handles it? 
-		// mattn/go-sqlite3 handles scans to types well.
-		if err := rows.Scan(&p.ID, &p.Name, &p.Bio, &p.IsActive); err != nil {
-			log.Println("Scan persona error:", err)
-			continue
-		}
-		
-		stats, err := GetLatestFitness(p.ID)
-		if err == nil {
-			p.Stats = stats
-		}
-		personas = append(personas, p)
-	}
-	return personas, nil
-}
-
-func GetLatestFitness(personaID string) (*models.PersonaStats, error) {
-	query := `
-		SELECT 
-			post_quality, 
-			incisiveness, 
-			judiciousness, 
-			raw_fitness 
-		FROM fitness_snapshot 
-		WHERE persona_id = ? 
-		ORDER BY created_at DESC 
-		LIMIT 1
-	`
-	var s models.PersonaStats
-	err := db.DB.QueryRow(query, personaID).Scan(&s.PostQuality, &s.Incisiveness, &s.Judiciousness, &s.RawFitness)
-	if err != nil {
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &personas); err != nil {
 		return nil, err
 	}
-	return &s, nil
+	
+	// Filter active in code if not in query (assuming we fetch all and filter)
+	// Or use FilterExpression if GSI doesn't cover is_active
+	var activePersonas []models.Persona
+	for _, p := range personas {
+		if p.IsActive {
+			activePersonas = append(activePersonas, p)
+		}
+	}
+
+	return activePersonas, nil
 }
 
 func GetGenerationStats() ([]models.GenerationStats, error) {
-	query := `
-		SELECT 
-			id, 
-			population_diversity, 
-			fitness_mean 
-		FROM generation 
-		ORDER BY id ASC
-	`
-	rows, err := db.DB.Query(query)
+	// Query GSI1 where GSI1PK="STATS"
+	out, err := db.Client.Query(context.TODO(), &dynamodb.QueryInput{
+		TableName:              aws.String(db.TableName),
+		IndexName:              aws.String("GSI1"),
+		KeyConditionExpression: aws.String("GSI1PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: "STATS"},
+		},
+		ScanIndexForward: aws.Bool(true), // ASC
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	var stats []models.GenerationStats
-	for rows.Next() {
-		var gs models.GenerationStats
-		// Scan NULLs? Schema says default 0.0 but let's be safe if needed. 
-		// Assuming non-null for simplified logic
-		if err := rows.Scan(&gs.Generation, &gs.PopulationDiversity, &gs.FitnessMean); err != nil {
-			continue
-		}
-		stats = append(stats, gs)
+	if err := attributevalue.UnmarshalListOfMaps(out.Items, &stats); err != nil {
+		return nil, err
 	}
+	
+	// Sort just in case (though Query with sort key GSI1SK=<GEN_ID> should work if ID is comparable)
+	// If GEN_ID is number, basic string sort might fail for 10 vs 2.
+	// But assuming simple integer sort logic or small numbers for now.
+	sort.Slice(stats, func(i, j int) bool {
+		return stats[i].Generation < stats[j].Generation
+	})
+
 	return stats, nil
 }
