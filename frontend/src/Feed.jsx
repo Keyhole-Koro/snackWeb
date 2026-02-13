@@ -2,41 +2,11 @@ import React, { useState } from 'react';
 import PostCard from './PostCard';
 
 /**
- * Groups feed items into threads:
- *  - Top-level: POST items (or items with no related_to)
- *  - Replies: REPLY/REACTION items grouped by related_to (matching agent_name of a post)
+ * Feed component — renders posts from the DB-backed API.
+ *
+ * The API now returns posts with nested `replies` arrays,
+ * so we no longer need to group/thread client-side.
  */
-function buildThreads(items) {
-    const threads = [];
-    const replyMap = {}; // agent_name -> replies[]
-
-    // First pass: separate posts from replies
-    for (const item of items) {
-        const type = (item.event_type || '').toLowerCase();
-        if (type === 'post' || (!item.related_to && type !== 'pass')) {
-            threads.push({ post: item, replies: [] });
-        }
-    }
-
-    // Second pass: attach replies to their parent post's thread
-    for (const item of items) {
-        const type = (item.event_type || '').toLowerCase();
-        if (type === 'reply' || type === 'reaction') {
-            const parentThread = threads.find(t => t.post.agent_name === item.related_to);
-            if (parentThread) {
-                parentThread.replies.push(item);
-            } else {
-                // Orphan reply — show as top-level
-                threads.push({ post: item, replies: [] });
-            }
-        } else if (type === 'pass') {
-            threads.push({ post: item, replies: [] });
-        }
-    }
-
-    return threads;
-}
-
 export default function Feed({ items, loading }) {
     const [expandedIdx, setExpandedIdx] = useState(null);
 
@@ -48,31 +18,28 @@ export default function Feed({ items, loading }) {
         return (
             <div className="empty-state">
                 <div className="empty-state__icon">📡</div>
-                <div className="empty-state__title">フィードが空です</div>
+                <div className="empty-state__title">Feed is empty</div>
                 <div className="empty-state__desc">
-                    シミュレーションを実行すると、ペルソナの投稿がここに表示されます。
+                    Run the simulation to see persona posts here.
                 </div>
             </div>
         );
     }
 
-    const threads = buildThreads(items);
-
     return (
         <div>
-            {threads.map((thread, i) => (
-                <div key={`thread-${i}`}>
+            {items.map((post, i) => (
+                <div key={post.id || `post-${i}`}>
                     <PostCard
-                        item={thread.post}
-                        replyCount={thread.replies.length}
+                        item={post}
+                        replyCount={(post.replies || []).length}
                         isExpanded={expandedIdx === i}
                         onClick={() => setExpandedIdx(expandedIdx === i ? null : i)}
                     />
-                    {/* Threaded replies — only shown when expanded */}
-                    {expandedIdx === i && thread.replies.length > 0 && (
+                    {expandedIdx === i && post.replies && post.replies.length > 0 && (
                         <div className="thread-replies">
-                            {thread.replies.map((reply, j) => (
-                                <PostCard key={`reply-${i}-${j}`} item={reply} isReply />
+                            {post.replies.map((reply, j) => (
+                                <PostCard key={reply.id || `reply-${j}`} item={reply} isReply />
                             ))}
                         </div>
                     )}

@@ -50,7 +50,7 @@ export default function PostCard({ item, replyCount = 0, isExpanded = false, onC
 
             {isPass ? (
                 <div className="post-card__content" style={{ fontStyle: 'italic', opacity: 0.6 }}>
-                    （沈黙を選択）
+                    (Opted for silence)
                 </div>
             ) : (
                 <div className="post-card__content">{item.content}</div>
@@ -60,7 +60,7 @@ export default function PostCard({ item, replyCount = 0, isExpanded = false, onC
             {!isReply && replyCount > 0 && (
                 <div className="post-card__reply-indicator">
                     <span className="post-card__reply-icon">{isExpanded ? '▾' : '▸'}</span>
-                    <span>{replyCount}件の返信</span>
+                    <span>{replyCount} {replyCount === 1 ? 'reply' : 'replies'}</span>
                 </div>
             )}
         </div>

@@ -43,7 +43,7 @@ export default function PersonaProfile({ persona, onClose }) {
                     border: '1px solid var(--border-subtle)',
                 }}>
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '8px' }}>
-                        Bio / ストーリー
+                        Bio / Story
                     </div>
                     <div style={{ fontSize: '0.88rem', lineHeight: 1.7, color: 'var(--text-secondary)' }}>
                         {persona.bio}
@@ -67,7 +67,7 @@ export default function PersonaProfile({ persona, onClose }) {
                     borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
                     cursor: 'pointer', fontFamily: 'inherit', fontSize: '0.85rem',
                 }}>
-                    閉じる
+                    Close
                 </button>
             </div>
         </div>

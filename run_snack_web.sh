@@ -10,41 +10,43 @@ ROOT_DIR="$(dirname "$SCRIPT_DIR")"
 echo "🍿 Starting SnackWeb..."
 echo ""
 
+# Proactive Cleanup
+echo "▸ Cleaning up any existing processes on port 13579..."
+fuser -k 13579/tcp 2>/dev/null || true
+sleep 1
+
 # ── Backend ──
-echo "▸ Starting Backend (FastAPI) on :8000 ..."
-cd "$ROOT_DIR"
-uvicorn snackWeb.backend.main:app --host 0.0.0.0 --port 8000 --reload &
+# ── Backend ──
+echo "▸ Starting Backend (Go) on :13579 ..."
+cd "$ROOT_DIR/snackWeb/backend"
+echo "  Building Go server..."
+go build -o server cmd/server/main.go
+./server &
 BACKEND_PID=$!
 echo "  PID: $BACKEND_PID"
-
-# ── Frontend ──
-echo "▸ Starting Frontend (Vite) on :5173 ..."
-cd "$SCRIPT_DIR/frontend"
-npm run dev -- --host &
-FRONTEND_PID=$!
-echo "  PID: $FRONTEND_PID"
 
 echo ""
 echo "═══════════════════════════════════════════"
 echo "  🍿 SnackWeb is running!"
 echo ""
-echo "  Frontend : http://localhost:5173"
-echo "  Backend  : http://localhost:8000"
-echo "  API Docs : http://localhost:8000/docs"
+echo "  Backend  : http://localhost:13579"
+echo "  API Docs : http://localhost:13579/docs"
 echo "═══════════════════════════════════════════"
 echo ""
 echo "Press Ctrl+C to stop all services."
 
-# Trap Ctrl+C to kill both processes
+# Trap Ctrl+C to kill both processes and their children
 cleanup() {
   echo ""
   echo "🛑 Shutting down..."
-  kill $BACKEND_PID 2>/dev/null
-  kill $FRONTEND_PID 2>/dev/null
-  wait
+  # Kill children of the stored PIDs (e.g. uvicorn worker, vite process)
+  pkill -P $BACKEND_PID 2>/dev/null || true
+  # Kill the stored PIDs themselves
+  kill $BACKEND_PID 2>/dev/null || true
+  wait $BACKEND_PID 2>/dev/null || true
   echo "Done."
 }
 
-trap cleanup SIGINT SIGTERM
+trap cleanup SIGINT SIGTERM EXIT
 
 wait

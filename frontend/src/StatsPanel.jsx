@@ -5,9 +5,9 @@ export default function StatsPanel({ stats }) {
         return (
             <div className="empty-state">
                 <div className="empty-state__icon">📊</div>
-                <div className="empty-state__title">統計データがありません</div>
+                <div className="empty-state__title">No statistical data</div>
                 <div className="empty-state__desc">
-                    進化シミュレーションを実行すると世代ごとの統計が表示されます。
+                    Run the evolution simulation to see generation-level stats.
                 </div>
             </div>
         );
@@ -20,17 +20,17 @@ export default function StatsPanel({ stats }) {
             {/* Summary cards */}
             <div className="stats-panel">
                 <div className="stat-card">
-                    <div className="stat-card__label">世代</div>
+                    <div className="stat-card__label">GEN</div>
                     <div className="stat-card__value">{latest.generation}</div>
                     <div className="stat-card__subtitle">Latest Generation</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-card__label">多様性</div>
+                    <div className="stat-card__label">DIVERSITY</div>
                     <div className="stat-card__value">{latest.population_diversity.toFixed(2)}</div>
                     <div className="stat-card__subtitle">Population Diversity</div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-card__label">平均適応度</div>
+                    <div className="stat-card__label">MEAN FITNESS</div>
                     <div className="stat-card__value">{latest.fitness_mean.toFixed(2)}</div>
                     <div className="stat-card__subtitle">Mean Fitness</div>
                 </div>

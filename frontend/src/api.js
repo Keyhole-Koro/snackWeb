@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'http://localhost:13579';
 
 export async function fetchFeed(limit = 50) {
     const res = await fetch(`${API_BASE}/api/feed?limit=${limit}`);

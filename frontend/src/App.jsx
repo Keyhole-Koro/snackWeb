@@ -58,7 +58,7 @@ export default function App() {
         <div className="sidebar__section-title">Personas</div>
         {personas.length === 0 && !loading && (
           <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textAlign: 'center', padding: '20px 0' }}>
-            ペルソナが読み込まれていません
+            No personas loaded
           </div>
         )}
         {personas.map((p, i) => (
@@ -84,13 +84,13 @@ export default function App() {
                   <span className="persona-card__stat-value" style={{ color: 'var(--accent-pink)' }}>
                     {p.stats.incisiveness.toFixed(2)}
                   </span>
-                  切れ味
+                  Incisiveness
                 </div>
                 <div className="persona-card__stat">
                   <span className="persona-card__stat-value" style={{ color: 'var(--accent-amber)' }}>
                     {p.stats.judiciousness.toFixed(2)}
                   </span>
-                  沈黙
+                  Silence
                 </div>
               </div>
             )}
@@ -106,19 +106,19 @@ export default function App() {
             className={`section-tab ${activeTab === 'feed' ? 'active' : ''}`}
             onClick={() => setActiveTab('feed')}
           >
-            📡 フィード
+            📡 Feed
           </button>
           <button
             className={`section-tab ${activeTab === 'stats' ? 'active' : ''}`}
             onClick={() => setActiveTab('stats')}
           >
-            📊 統計
+            📊 Stats
           </button>
           <button
             className={`section-tab ${activeTab === 'viz' ? 'active' : ''}`}
             onClick={() => setActiveTab('viz')}
           >
-            🧬 可視化
+            🧬 Visualization
           </button>
         </div>
 
@@ -160,7 +160,7 @@ function VizImage({ src, caption }) {
   return (
     <div className="viz-card">
       <img
-        src={`http://localhost:8000${src}`}
+        src={`http://localhost:13579${src}`}
         alt={caption}
         onError={() => setError(true)}
       />
