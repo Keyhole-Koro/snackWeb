@@ -1,0 +1,7 @@
+env                  = "prod"
+project              = "snack"
+region               = "us-east-1"
+bucket_name          = "snack-frontend-prod-12345"
+persona_state_bucket = "terraform-state-prod-snack-12345"
+persona_state_key    = "snackPersona/terraform.tfstate"
+persona_state_region = "us-east-1"

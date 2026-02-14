@@ -1,0 +1,8 @@
+env                    = "local"
+project                = "snack"
+region                 = "us-east-1"
+bucket_name            = "snack-frontend-local"
+persona_state_bucket   = "terraform-state-local"
+persona_state_key      = "snackPersona/terraform.tfstate"
+persona_state_region   = "us-east-1"
+persona_state_endpoint = "http://localhost:4566"
